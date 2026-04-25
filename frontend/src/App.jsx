@@ -1,9 +1,12 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import useAuthStore from './store/useAuthStore';
+import useThemeStore from './store/useThemeStore';
 import ProtectedRoute from './components/ProtectedRoute';
 
 // Pages
+import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
 import CompleteProfile from './pages/CompleteProfile';
@@ -13,30 +16,35 @@ import WardenDashboard from './pages/WardenDashboard';
 import ManagerDashboard from './pages/ManagerDashboard';
 import GatekeeperDashboard from './pages/GatekeeperDashboard';
 import StudentDashboard from './pages/StudentDashboard';
+import GateScan from './pages/GateScan';
 
 function RoleRedirect() {
   const { isAuthenticated, role } = useAuthStore();
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) return <Navigate to="/" replace />;
   return <Navigate to={`/${role}`} replace />;
 }
 
 export default function App() {
+  const { initTheme, theme } = useThemeStore();
+
+  useEffect(() => {
+    initTheme();
+  }, [initTheme]);
+
+  // Dynamic toast style based on theme
+  const toastStyle = theme === 'light'
+    ? { background: '#fff', color: '#1e293b', border: '1px solid rgba(0,0,0,0.08)', borderRadius: '10px', fontSize: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }
+    : { background: '#1e293b', color: '#f1f5f9', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '14px' };
+
   return (
     <BrowserRouter>
       <Toaster
         position="top-right"
-        toastOptions={{
-          style: {
-            background: '#1e293b',
-            color: '#f1f5f9',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '10px',
-            fontSize: '14px',
-          },
-        }}
+        toastOptions={{ style: toastStyle }}
       />
       <Routes>
         {/* Public */}
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
 
         {/* Auth Required — Password Change */}
@@ -109,8 +117,10 @@ export default function App() {
           }
         />
 
+        {/* Gate Scan — QR action handler (authenticated gatekeeper only) */}
+        <Route path="/gate-scan" element={<GateScan />} />
+
         {/* Fallback */}
-        <Route path="/" element={<RoleRedirect />} />
         <Route path="*" element={<RoleRedirect />} />
       </Routes>
     </BrowserRouter>

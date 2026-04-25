@@ -1,79 +1,59 @@
 import { useEffect, useState } from 'react';
-import { FileText, QrCode, Plus, Clock, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
+import { FileText, QrCode, Plus, Clock, CheckCircle, XCircle, Loader2, AlertCircle, ChevronRight } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import toast from 'react-hot-toast';
 import Layout from '../components/Layout';
 import StatCard from '../components/StatCard';
 import Modal from '../components/Modal';
-import api from '../services/api';
+import { requestPass, getMyRequests, getMyPassesWithStatus, cancelPassRequest } from '../services/passService';
 
 export default function StudentDashboard() {
   const [requests, setRequests] = useState([]);
   const [passes, setPasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
-  const [profile, setProfile] = useState(null);
   const [needsProfile, setNeedsProfile] = useState(false);
+  const location = useLocation();
 
-  // Create request modal
+  useEffect(() => {
+    if (location.hash === '#passes') setActiveTab('passes');
+    else if (location.hash === '#requests') setActiveTab('requests');
+  }, [location.hash]);
+
   const [showCreate, setShowCreate] = useState(false);
-  const [requestForm, setRequestForm] = useState({
-    reason: '',
-    destination: '',
-    fromDate: '',
-    toDate: '',
-  });
+  const [requestForm, setRequestForm] = useState({ reason: '', destination: '', fromDate: '', toDate: '' });
   const [docFile, setDocFile] = useState(null);
   const [creating, setCreating] = useState(false);
-
-  // QR modal
   const [qrModal, setQrModal] = useState({ open: false, pass: null });
 
   const fetchAll = async () => {
     try {
-      const [reqRes, passRes] = await Promise.all([
-        api.get('/passes/my-requests'),
-        api.get('/passes/my'),
-      ]);
-      setRequests(reqRes.data.requests || []);
-      setPasses(passRes.data.passes || []);
+      const [reqRes, passRes] = await Promise.all([getMyRequests(), getMyPassesWithStatus()]);
+      setRequests((reqRes.requests || []).filter(r => r.status !== 'cancelled'));
+      setPasses(passRes.passes || []);
     } catch (err) {
-      if (err.response?.data?.message === 'Complete profile first') {
+      if (err.response?.status === 403 && err.response?.data?.message.includes('profile')) {
         setNeedsProfile(true);
       } else {
-        toast.error('Failed to load data');
+        toast.error(err.response?.data?.message || 'Failed to load data');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
+  useEffect(() => { fetchAll(); }, []);
 
   const handleCreateRequest = async (e) => {
     e.preventDefault();
     const { reason, destination, fromDate, toDate } = requestForm;
-    if (!reason || !destination || !fromDate || !toDate) {
-      toast.error('All fields are required');
-      return;
-    }
+    if (!reason || !destination || !fromDate || !toDate) { toast.error('All fields are required'); return; }
     setCreating(true);
     try {
-      const formDataObj = new FormData();
-      formDataObj.append('reason', reason);
-      formDataObj.append('destination', destination);
-      formDataObj.append('fromDate', fromDate);
-      formDataObj.append('toDate', toDate);
-      if (docFile) {
-        formDataObj.append('document', docFile);
-      }
-
-      await api.post('/passes/request-pass', formDataObj, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      toast.success('Pass request submitted!');
+      await requestPass({ reason, destination, fromDate, toDate, document: docFile });
+      toast.success('Pass request submitted successfully!');
       setShowCreate(false);
       setRequestForm({ reason: '', destination: '', fromDate: '', toDate: '' });
       setDocFile(null);
@@ -85,37 +65,35 @@ export default function StudentDashboard() {
     }
   };
 
-  const formatDate = (d) =>
-    d
-      ? new Date(d).toLocaleDateString('en-IN', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-        })
-      : '—';
+  const handleCancel = async (id) => {
+    if (!window.confirm('Are you sure you want to cancel this request?')) return;
+    try {
+      await cancelPassRequest(id);
+      toast.success('Request cancelled successfully');
+      fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to cancel request');
+    }
+  };
 
-  const formatDateTime = (d) =>
-    d
-      ? new Date(d).toLocaleString('en-IN', {
-          day: '2-digit',
-          month: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      : '—';
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const formatDateTime = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 
-  const pendingCount = requests.filter((r) => r.status === 'pending' || r.status === 'forwarded').length;
-  const approvedCount = requests.filter((r) => r.status === 'approved').length;
-  const rejectedCount = requests.filter((r) => r.status === 'rejected').length;
+  const pendingCount = requests.filter(r => r.status === 'pending' || r.status === 'forwarded').length;
+  const approvedCount = requests.filter(r => r.status === 'approved').length;
+  const rejectedCount = requests.filter(r => r.status === 'rejected').length;
+
+  // Active pass & pending request for overview
+  const activePass = passes.find(p => p.status === 'active' || p.status === 'out');
+  const pendingRequest = requests.find(r => r.status === 'pending' || r.status === 'forwarded');
+  const recentRequests = requests.slice(0, 3);
 
   if (needsProfile) {
     return (
       <Layout pageTitle="Student Dashboard">
         <div className="card" style={{ textAlign: 'center', padding: '48px' }}>
           <h2 style={{ marginBottom: '8px' }}>Profile Required</h2>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>
-            Please complete your profile before accessing the dashboard.
-          </p>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>Please complete your profile before accessing the dashboard.</p>
           <a href="/complete-profile" className="btn btn-primary">Complete Profile</a>
         </div>
       </Layout>
@@ -125,7 +103,7 @@ export default function StudentDashboard() {
   return (
     <Layout pageTitle="Student Dashboard">
       {loading ? (
-        <div className="page-loader"><div className="spinner" /></div>
+        <div className="page-loader"><Loader2 className="spinner" /></div>
       ) : (
         <>
           <div className="tabs">
@@ -142,11 +120,126 @@ export default function StudentDashboard() {
                   <Plus size={18} /> Request Pass
                 </button>
               </div>
-              <div className="stats-grid">
-                <StatCard icon={Clock} label="Pending" value={pendingCount} color="yellow" />
-                <StatCard icon={CheckCircle} label="Approved" value={approvedCount} color="green" />
-                <StatCard icon={XCircle} label="Rejected" value={rejectedCount} color="red" />
-                <StatCard icon={QrCode} label="Total Passes" value={passes.length} color="blue" />
+
+              {/* Stat Cards */}
+              <motion.div className="stats-grid" initial="hidden" animate="visible" variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.07 } } }}>
+                <StatCard icon={Clock} label="Pending" value={pendingCount} color="yellow" onClick={() => setActiveTab('requests')} />
+                <StatCard icon={CheckCircle} label="Approved" value={approvedCount} color="green" onClick={() => setActiveTab('requests')} />
+                <StatCard icon={XCircle} label="Rejected" value={rejectedCount} color="red" onClick={() => setActiveTab('requests')} />
+                <StatCard icon={QrCode} label="Total Passes" value={passes.length} color="blue" onClick={() => setActiveTab('passes')} />
+              </motion.div>
+
+              {/* Active Pass Banner */}
+              {activePass && (
+                <div style={{
+                  background: 'rgba(34, 197, 94, 0.08)',
+                  border: '1px solid rgba(34, 197, 94, 0.25)',
+                  borderRadius: '12px',
+                  padding: '16px 20px',
+                  marginBottom: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
+                    <div>
+                      <p style={{ color: '#22c55e', fontWeight: 600, fontSize: '14px' }}>Active Pass</p>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                        {activePass.passId} · Valid until {formatDateTime(activePass.validTo)}
+                      </p>
+                    </div>
+                  </div>
+                  <button className="btn btn-sm btn-secondary" onClick={() => setQrModal({ open: true, pass: activePass })}>
+                    <QrCode size={14} /> Show QR
+                  </button>
+                </div>
+              )}
+
+              {/* Pending Request Banner */}
+              {pendingRequest && (
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.08)',
+                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                  borderRadius: '12px',
+                  padding: '16px 20px',
+                  marginBottom: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  flexWrap: 'wrap'
+                }}>
+                  <AlertCircle size={18} color="#f59e0b" />
+                  <div>
+                    <p style={{ color: '#f59e0b', fontWeight: 600, fontSize: '14px' }}>Request Pending</p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                      "{pendingRequest.reason}" to {pendingRequest.destination} · Submitted {formatDate(pendingRequest.createdAt)}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Two column layout for bottom section */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap: '24px'
+              }}>
+                {/* Recent Requests */}
+                <div className="card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600 }}>Recent Requests</h3>
+                    <button
+                      onClick={() => setActiveTab('requests')}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-accent)', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      View all <ChevronRight size={14} />
+                    </button>
+                  </div>
+                  {recentRequests.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                      <FileText size={32} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
+                      <p style={{ fontSize: '13px' }}>No requests yet</p>
+                    </div>
+                  ) : (
+                    recentRequests.map(r => (
+                      <div key={r.id} style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 0',
+                        borderBottom: '1px solid var(--border-subtle)'
+                      }}>
+                        <div>
+                          <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{r.reason}</p>
+                          <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{r.destination} · {formatDate(r.createdAt)}</p>
+                        </div>
+                        <span className={`badge badge-${r.status}`}>{r.status}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Quick Tips */}
+                <div className="card">
+                  <h3 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '16px' }}>Quick Guide</h3>
+                  {[
+                    { icon: Plus, title: 'Submit a Request', desc: 'Click "Request Pass" and fill in reason, destination and dates.' },
+                    { icon: Clock, title: 'Wait for Approval', desc: 'Manager reviews your request. You\'ll see status update here.' },
+                    { icon: QrCode, title: 'Show QR at Gate', desc: 'Once approved, show the QR code from My Passes to the gatekeeper.' },
+                    { icon: XCircle, title: 'Cancel if Needed', desc: 'Changed plans? Cancel a pending request and submit a new one.' },
+                  ].map((tip, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '12px', marginBottom: '14px' }}>
+                      <tip.icon size={18} style={{ flexShrink: 0, color: 'var(--text-accent)', marginTop: '2px' }} />
+                      <div>
+                        <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{tip.title}</p>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{tip.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -169,12 +262,14 @@ export default function StudentDashboard() {
                         <th>From</th>
                         <th>To</th>
                         <th>Status</th>
+                        <th>Remark</th>
                         <th>Submitted</th>
+                        <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {requests.length === 0 ? (
-                        <tr><td colSpan={6}><div className="empty-state"><FileText size={40} /><p>No requests yet</p></div></td></tr>
+                        <tr><td colSpan={7}><div className="empty-state"><FileText size={40} /><p>No requests yet</p></div></td></tr>
                       ) : (
                         requests.map((r) => (
                           <tr key={r.id}>
@@ -183,7 +278,15 @@ export default function StudentDashboard() {
                             <td>{formatDate(r.fromDate)}</td>
                             <td>{formatDate(r.toDate)}</td>
                             <td><span className={`badge badge-${r.status}`}>{r.status}</span></td>
+                            <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              {r.wardenAction?.remark || r.managerAction?.remark || '—'}
+                            </td>
                             <td>{formatDate(r.createdAt)}</td>
+                            <td>
+                              {r.status === 'pending' && (
+                                <button className="btn btn-sm btn-danger" onClick={() => handleCancel(r.id)}>Cancel</button>
+                              )}
+                            </td>
                           </tr>
                         ))
                       )}
@@ -206,7 +309,7 @@ export default function StudentDashboard() {
                         <th>Valid From</th>
                         <th>Valid To</th>
                         <th>Status</th>
-                        <th>QR Code</th>
+                        <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -220,11 +323,13 @@ export default function StudentDashboard() {
                             <td>{formatDateTime(p.validTo)}</td>
                             <td><span className={`badge badge-${p.status}`}>{p.status}</span></td>
                             <td>
-                              {p.status === 'active' || p.status === 'upcoming' ? (
+                              {(p.status === 'active' || p.status === 'out' || p.status === 'upcoming') ? (
                                 <button className="btn btn-sm btn-secondary" onClick={() => setQrModal({ open: true, pass: p })}>
-                                  <QrCode size={14} /> Show
+                                  <QrCode size={14} /> Show QR
                                 </button>
-                              ) : '—'}
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)' }}>{p.status}</span>
+                              )}
                             </td>
                           </tr>
                         ))
@@ -241,50 +346,25 @@ export default function StudentDashboard() {
             <form onSubmit={handleCreateRequest}>
               <div className="form-group">
                 <label className="form-label">Reason</label>
-                <textarea
-                  className="form-textarea"
-                  placeholder="Why do you need a pass?"
-                  value={requestForm.reason}
-                  onChange={(e) => setRequestForm({ ...requestForm, reason: e.target.value })}
-                />
+                <textarea className="form-textarea" placeholder="Why do you need a pass?" value={requestForm.reason} onChange={(e) => setRequestForm({ ...requestForm, reason: e.target.value })} required />
               </div>
               <div className="form-group">
                 <label className="form-label">Destination</label>
-                <input
-                  className="form-input"
-                  placeholder="Where are you going?"
-                  value={requestForm.destination}
-                  onChange={(e) => setRequestForm({ ...requestForm, destination: e.target.value })}
-                />
+                <input className="form-input" placeholder="Where are you going?" value={requestForm.destination} onChange={(e) => setRequestForm({ ...requestForm, destination: e.target.value })} required />
               </div>
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">From Date</label>
-                  <input
-                    className="form-input"
-                    type="datetime-local"
-                    value={requestForm.fromDate}
-                    onChange={(e) => setRequestForm({ ...requestForm, fromDate: e.target.value })}
-                  />
+                  <input className="form-input" type="datetime-local" value={requestForm.fromDate} onChange={(e) => setRequestForm({ ...requestForm, fromDate: e.target.value })} required />
                 </div>
                 <div className="form-group">
                   <label className="form-label">To Date</label>
-                  <input
-                    className="form-input"
-                    type="datetime-local"
-                    value={requestForm.toDate}
-                    onChange={(e) => setRequestForm({ ...requestForm, toDate: e.target.value })}
-                  />
+                  <input className="form-input" type="datetime-local" value={requestForm.toDate} onChange={(e) => setRequestForm({ ...requestForm, toDate: e.target.value })} required />
                 </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Supporting Document (optional)</label>
-                <input
-                  className="form-input"
-                  type="file"
-                  onChange={(e) => setDocFile(e.target.files[0])}
-                  accept=".pdf,.jpg,.jpeg,.png"
-                />
+                <input className="form-input" type="file" onChange={(e) => setDocFile(e.target.files[0])} accept=".pdf,.jpg,.jpeg,.png" />
               </div>
               <div className="modal-footer" style={{ padding: 0, marginTop: '16px' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button>
@@ -299,14 +379,24 @@ export default function StudentDashboard() {
           <Modal isOpen={qrModal.open} onClose={() => setQrModal({ open: false, pass: null })} title="Your Gate Pass QR Code">
             {qrModal.pass && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-                <div className="qr-container">
+                <div className="qr-container" style={{ background: 'white', padding: '16px', borderRadius: '8px' }}>
                   <QRCodeSVG value={qrModal.pass.qrCode} size={200} level="H" />
-                  <div className="qr-label">{qrModal.pass.passId}</div>
                 </div>
                 <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                  <p>Show this QR code at the gate</p>
-                  <p style={{ marginTop: '4px' }}>
-                    Valid: {formatDateTime(qrModal.pass.validFrom)} — {formatDateTime(qrModal.pass.validTo)}
+                  <p style={{ fontWeight: 'bold', color: 'var(--text-primary)', fontSize: '16px', marginBottom: '4px' }}>
+                    Pass ID: {qrModal.pass.passId}
+                  </p>
+                  <p style={{
+                    fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px',
+                    background: 'var(--bg-glass)', padding: '4px 10px', borderRadius: '6px',
+                    fontFamily: 'monospace', userSelect: 'all', cursor: 'text'
+                  }}>
+                    {qrModal.pass.qrCode}
+                  </p>
+                  <p>Show this QR code to the gatekeeper at the gate</p>
+                  <p style={{ marginTop: '4px' }}>Valid: {formatDateTime(qrModal.pass.validFrom)} — {formatDateTime(qrModal.pass.validTo)}</p>
+                  <p style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    The gatekeeper can also use your Pass ID: <strong style={{ color: 'var(--text-accent)' }}>{qrModal.pass.passId}</strong>
                   </p>
                 </div>
               </div>

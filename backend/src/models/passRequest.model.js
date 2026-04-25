@@ -29,7 +29,7 @@ const passRequestSchema = new mongoose.Schema({
 
     status: {
         type: String,
-        enum: ["pending", "approved", "rejected", "forwarded"],
+        enum: ["pending", "approved", "rejected", "forwarded", "cancelled"],
         default: "pending"
     },
     supportingDoc: {
@@ -42,7 +42,7 @@ const passRequestSchema = new mongoose.Schema({
     managerAction: {
         status: {
             type: String,
-            enum: ["pending", "approved", "rejected", "forwarded"],
+            enum: ["pending", "approved", "rejected", "forwarded", "cancelled"],
             default: "pending"
         },
         remark: String,
@@ -62,6 +62,12 @@ const passRequestSchema = new mongoose.Schema({
     approvedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"
+    },
+
+    hostel: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Hostel",
+        required: true
     }
 
 }, { timestamps: true });

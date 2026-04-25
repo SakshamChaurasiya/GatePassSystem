@@ -1,4 +1,5 @@
 const Hostel = require("../models/hostel.model");
+const User = require("../models/user.model");
 
 // CREATE HOSTEL
 const createHostel = async (req, res) => {
@@ -47,4 +48,37 @@ const getHostels = async (req, res) => {
     }
 };
 
-module.exports = { createHostel, getHostels };
+const getHostelDetails = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const hostel = await Hostel.findById(id);
+        if (!hostel) return res.status(404).json({ message: "Hostel not found" });
+
+        const users = await User.find({ hostel: id }).select('name email role');
+
+        const grouped = {
+            wardens: users.filter(u => u.role === 'warden'),
+            managers: users.filter(u => u.role === 'manager'),
+            gatekeepers: users.filter(u => u.role === 'gatekeeper'),
+            students: users.filter(u => u.role === 'student'),
+        };
+
+        res.status(200).json({
+            hostel,
+            counts: {
+                total: users.length,
+                wardens: grouped.wardens.length,
+                managers: grouped.managers.length,
+                gatekeepers: grouped.gatekeepers.length,
+                students: grouped.students.length,
+            },
+            users: grouped
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+module.exports = { createHostel, getHostels, getHostelDetails };

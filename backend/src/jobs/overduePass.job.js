@@ -5,39 +5,45 @@ const Notification = require("../models/notification.model");
 
 const checkOverduePasses = () => {
     cron.schedule("*/5 * * * *", async () => {
-        // runs every 5 minutes
-
         try {
             const now = new Date();
 
+            // Find passes where student is OUT but hasn't returned and pass time has expired
             const overduePasses = await Pass.find({
-                usedAt: { $ne: null },
+                status: "out",
                 returnedAt: null,
                 validTo: { $lt: now },
-                notified: { $ne: true } // prevent spam
+                notified: { $ne: true }
             }).populate("studentId");
 
             for (let pass of overduePasses) {
-
-                // 👉 Find manager (depends on your schema)
-                const manager = await User.findOne({
-                    role: "manager",
+                // Find both manager and warden for this hostel
+                const staffMembers = await User.find({
+                    role: { $in: ["manager", "warden"] },
                     hostel: pass.hostel
                 });
 
-                if (manager) {
+                for (const staff of staffMembers) {
                     await Notification.create({
-                        recipient: manager._id,
+                        recipient: staff._id,
                         type: "OVERDUE",
-                        message: `${pass.studentId.name} has not returned on time`,
+                        message: `⚠️ OVERDUE: ${pass.studentId?.name || "Student"} has not returned on time (Pass: ${pass.passId}, Expected by: ${new Date(pass.validTo).toLocaleString()})`,
                         relatedPass: pass._id
                     });
                 }
 
-                // mark as notified (IMPORTANT)
                 pass.notified = true;
                 await pass.save();
             }
+
+            // Also auto-expire active passes that are past validTo and never used
+            await Pass.updateMany(
+                {
+                    status: "active",
+                    validTo: { $lt: now }
+                },
+                { $set: { status: "expired" } }
+            );
 
         } catch (err) {
             console.error("Overdue Job Error:", err);

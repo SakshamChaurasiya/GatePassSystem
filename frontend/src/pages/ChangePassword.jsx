@@ -30,7 +30,7 @@ export default function ChangePassword() {
 
     setLoading(true);
     try {
-      await api.post('/auth/change-password', { newPassword });
+      await api.patch('/auth/change-password', { newPassword });
       passwordChanged();
       toast.success('Password updated! Completing setup...');
       navigate(`/${role}`);

@@ -31,22 +31,35 @@ const passSchema = new mongoose.Schema({
 
     status: {
         type: String,
-        enum: ["active", "used", "expired"],
+        enum: ["active", "out", "returned", "expired"],
         default: "active"
     },
-    returnedAt: {
-        type: Date,
-        default: null
-    },
-    notified: {
-        type: Boolean,
-        default: false
-    },
+
     validFrom: Date,
     validTo: Date,
 
-    usedAt: Date,
-    returnedAt: Date
+    usedAt: Date,       // when student was marked OUT
+    returnedAt: Date,   // when student was marked IN
+
+    gatekeeperOutId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    },
+
+    gatekeeperInId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    },
+
+    lateReturn: {
+        type: Boolean,
+        default: false
+    },
+
+    notified: {
+        type: Boolean,
+        default: false
+    }
 
 }, { timestamps: true });
 

@@ -32,6 +32,7 @@ const login = async (req, res) => {
 
         // 2. Find user
         const user = await User.findOne({ email });
+        
 
         if (!user) {
             return res.status(401).json({
@@ -48,6 +49,7 @@ const login = async (req, res) => {
 
         // 4. Compare password
         const isMatch = await user.comparePassword(password);
+        
 
         if (!isMatch) {
             return res.status(401).json({
@@ -73,7 +75,8 @@ const login = async (req, res) => {
         return res.status(200).json({
             message: "Login successful",
             token,
-            role: user.role
+            role: user.role,
+            mustChangePassword: false
         });
 
     } catch (error) {
@@ -115,10 +118,12 @@ const changePassword = async (req, res) => {
             });
         }
 
-        user.password = newPassword;
-        user.mustChangePassword = false;
-
-        await user.save();
+        const bcrypt = require('bcryptjs');
+        const hashed = await bcrypt.hash(newPassword, 10);
+        await User.updateOne(
+         { _id: req.user.id },
+         {$set: { password: hashed, mustChangePassword: false } }
+        );
 
         res.status(200).json({
             message: "Password updated successfully"

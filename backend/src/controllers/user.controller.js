@@ -7,6 +7,7 @@ const StudentProfile = require("../models/studentProfile.model");
 const WardenProfile = require("../models/wardenProfile.model");
 const ManagerProfile = require("../models/managerProfile.model");
 const GatekeeperProfile = require("../models/gatekeeperProfile.model");
+const mongoose = require("mongoose");
 
 const generateTempPassword = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#";
@@ -24,7 +25,7 @@ const createUser = async (req, res) => {
     try {
         const { name, email, role, hostel: hostelId } = req.body;
 
-        const rolesRequiringHostel = ["warden", "manager", "student", "gatekeeper"];
+        const rolesRequiringHostel = ["warden", "manager"]; //, "student"
 
         // =========================
         // 🔴 BASIC VALIDATION
@@ -148,15 +149,14 @@ const createUser = async (req, res) => {
 // =========================
 const getUsers = async (req, res) => {
     try {
-        const { role, hostel } = req.user;
+        const { role: userRole, hostel } = req.user;
+        const { role: requestedRole } = req.query;
 
         let query = {};
 
-        if (role === "super-admin") {
+        if (userRole === "super-admin") {
             query = {}; // sees all
-        } else if (role === "admin") {
-            query = { hostel };
-        } else if (["warden", "manager"].includes(role)) {
+        } else if (["admin", "warden", "manager"].includes(userRole)) {
             query = { hostel };
         } else {
             return res.status(403).json({
@@ -164,9 +164,35 @@ const getUsers = async (req, res) => {
             });
         }
 
-        const users = await User.find(query).select("-password");
+        // If a specific role is requested, add it to the query
+        if (requestedRole && requestedRole !== 'all') {
+            // Case-insensitive role match for the query if possible, 
+            // but for simplicity we assume the enum is lowercase
+            query.role = requestedRole.toLowerCase();
+        }
 
+        const users = await User.find(query).select('name email role hostel').lean();
+        
+        // If a specific role was requested, return a flat list for that role
+        if (requestedRole && requestedRole !== 'all') {
+            return res.status(200).json({
+                count: users.length,
+                role: requestedRole,
+                debug: {
+                    userRole,
+                    requestedRole,
+                    totalFound: users.length,
+                    currentUser: req.user, // NEW
+                    dbName: mongoose.connection.db.databaseName // NEW
+                },
+                data: users
+            });
+        }
+
+        // For "all" or if no role specified, return the grouped structure 
+        // AND also return the flat list in a 'users' field for easier debugging
         const grouped = {
+            admins: users.filter(u => u.role === "admin"),
             wardens: users.filter(u => u.role === "warden"),
             managers: users.filter(u => u.role === "manager"),
             gatekeepers: users.filter(u => u.role === "gatekeeper"),
@@ -175,13 +201,15 @@ const getUsers = async (req, res) => {
 
         return res.status(200).json({
             counts: {
+                admins: grouped.admins.length,
                 wardens: grouped.wardens.length,
                 managers: grouped.managers.length,
                 gatekeepers: grouped.gatekeepers.length,
                 students: grouped.students.length,
                 total: users.length
             },
-            data: grouped
+            data: grouped,
+            allUsers: users // NEW Debug field
         });
 
     } catch (error) {
@@ -211,9 +239,26 @@ const getDashboardStats = async (req, res) => {
                 }
             ]);
 
+            const hostelStats = await User.aggregate([
+                { $match: { role: "student", hostel: { $ne: null } } },
+                {
+                    $group: {
+                        _id: "$hostel",
+                        count: { $sum: 1 }
+                    }
+                }
+            ]);
+
+            const recentUsers = await User.find()
+                .sort({ createdAt: -1 })
+                .limit(8)
+                .select("name role createdAt");
+
             stats = {
                 totalUsers,
-                roleBreakdown: roleStats
+                roleBreakdown: roleStats,
+                hostelBreakdown: hostelStats,
+                recentUsers
             };
         }
 

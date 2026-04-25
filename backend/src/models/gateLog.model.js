@@ -1,12 +1,33 @@
+const mongoose = require("mongoose");
+
 const gateLogSchema = new mongoose.Schema({
     studentId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "User"
+        ref: "User",
+        required: true
     },
 
     passId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Pass"
+        ref: "Pass",
+        required: true
+    },
+
+    gatekeeperId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true
+    },
+
+    action: {
+        type: String,
+        enum: ["out", "in"],
+        required: true
+    },
+
+    timestamp: {
+        type: Date,
+        default: Date.now
     },
 
     outTime: Date,

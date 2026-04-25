@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema({
         validator: function (value) {
             if (!this.role) return true;
 
-            if (["warden", "manager", "student", "gatekeeper"].includes(this.role)) {
+            if (["warden", "manager"].includes(this.role)) { //, "student"
                 return !!value;
             }
 

@@ -26,7 +26,7 @@ const seedSuperAdmin = async () => {
             email: process.env.SUPER_ADMIN_EMAIL || "superadmin@example.com",
             password: process.env.SUPER_ADMIN_PASSWORD || "Admin@123",
             role: "super-admin",
-            mustChangePassword: false // 🔥 important
+            mustChangePassword: false, // 🔥 important
         });
 
         console.log("✅ Super-admin created:");

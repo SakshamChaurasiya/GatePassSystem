@@ -1,15 +1,18 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Mail, Lock, Loader2 } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { ShieldCheck, Mail, Lock, Loader2, Sun, Moon, ArrowLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import useAuthStore from '../store/useAuthStore';
+import useThemeStore from '../store/useThemeStore';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuthStore();
+  const { theme, toggleTheme } = useThemeStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -42,11 +45,31 @@ export default function Login() {
 
   return (
     <div className="auth-page">
-      <div className="auth-card">
+      {/* Theme toggle */}
+      <button
+        className="btn-icon"
+        onClick={toggleTheme}
+        style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 10 }}
+        title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+      >
+        {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+      </button>
+
+      <motion.div
+        className="auth-card"
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+      >
         <div className="auth-header">
-          <div className="auth-logo">
+          <motion.div
+            className="auth-logo"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.15, duration: 0.4 }}
+          >
             <ShieldCheck />
-          </div>
+          </motion.div>
           <h1>Welcome Back</h1>
           <p>Sign in to Gate Pass Management System</p>
         </div>
@@ -108,7 +131,23 @@ export default function Login() {
             {loading ? <Loader2 className="spinner" size={18} /> : 'Sign In'}
           </button>
         </form>
-      </div>
+
+        <Link
+          to="/"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            marginTop: '20px',
+            color: 'var(--text-muted)',
+            fontSize: '14px',
+            transition: 'color 0.15s'
+          }}
+        >
+          <ArrowLeft size={14} /> Back to Home
+        </Link>
+      </motion.div>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+dotenv.config();
+
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
@@ -9,7 +11,7 @@ const hostelRoutes = require("./routes/hostel.routes");
 const checkOverduePasses = require("./jobs/overduePass.job");
 const notificationRoutes = require("./routes/notification.routes");
 
-dotenv.config();
+
 
 connectDB();
 checkOverduePasses();
