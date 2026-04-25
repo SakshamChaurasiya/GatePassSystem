@@ -22,7 +22,8 @@ app.use(express.json());
 
 app.use(cors({
   origin: [
-    "http://localhost:5173",           // Allow your local frontend
+    "http://localhost:5173",
+    "https://gate-pass-system-phi.vercel.app/" ,          
   ],
   credentials: true
 }));
