@@ -8,13 +8,18 @@ const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
 const passRoutes = require("./routes/pass.routes");
 const hostelRoutes = require("./routes/hostel.routes");
-const checkOverduePasses = require("./jobs/overduePass.job");
+const scheduleOverduePassJob = require("./jobs/overduePass.job");
+const startEmailQueueWorker = require("./jobs/emailQueue.job");
 const notificationRoutes = require("./routes/notification.routes");
 
 
 
+// Connect Database
 connectDB();
-checkOverduePasses();
+
+// Start Cron Jobs
+scheduleOverduePassJob();
+startEmailQueueWorker();
 
 const app = express();
 app.use(cors());

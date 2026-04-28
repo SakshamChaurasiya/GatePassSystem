@@ -9,7 +9,7 @@ const notificationSchema = new mongoose.Schema({
 
     type: {
         type: String,
-        enum: ["OVERDUE", "LATE_RETURN", "STUDENT_OUT", "STUDENT_IN", "GENERAL"],
+        enum: ["OVERDUE", "LATE_RETURN", "STUDENT_OUT", "STUDENT_IN", "GENERAL", "EXTENSION_REQUEST", "EXTENSION_RESULT", "ACCOUNT_CREATED"],
         default: "GENERAL"
     },
 

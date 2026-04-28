@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
-import { FileText, QrCode, Plus, Clock, CheckCircle, XCircle, Loader2, AlertCircle, ChevronRight } from 'lucide-react';
+import { FileText, QrCode, Plus, Clock, CheckCircle, XCircle, Loader2, AlertCircle, ChevronRight, TimerReset } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import toast from 'react-hot-toast';
 import Layout from '../components/Layout';
 import StatCard from '../components/StatCard';
 import Modal from '../components/Modal';
-import { requestPass, getMyRequests, getMyPassesWithStatus, cancelPassRequest } from '../services/passService';
+import { requestPass, getMyRequests, getMyPassesWithStatus, cancelPassRequest, requestExtension, getMyExtensionRequests } from '../services/passService';
 
 export default function StudentDashboard() {
   const [requests, setRequests] = useState([]);
   const [passes, setPasses] = useState([]);
+  const [extensions, setExtensions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [needsProfile, setNeedsProfile] = useState(false);
@@ -28,11 +29,23 @@ export default function StudentDashboard() {
   const [creating, setCreating] = useState(false);
   const [qrModal, setQrModal] = useState({ open: false, pass: null });
 
+  // Extension state
+  const [showExtension, setShowExtension] = useState(false);
+  const [extensionForm, setExtensionForm] = useState({ requestedHours: 1, remark: '' });
+  const [extDocFile, setExtDocFile] = useState(null);
+  const [extCreating, setExtCreating] = useState(false);
+  const [extensionPassId, setExtensionPassId] = useState(null);
+
   const fetchAll = async () => {
     try {
-      const [reqRes, passRes] = await Promise.all([getMyRequests(), getMyPassesWithStatus()]);
+      const [reqRes, passRes, extRes] = await Promise.all([
+        getMyRequests(),
+        getMyPassesWithStatus(),
+        getMyExtensionRequests().catch(() => ({ extensions: [] }))
+      ]);
       setRequests((reqRes.requests || []).filter(r => r.status !== 'cancelled'));
       setPasses(passRes.passes || []);
+      setExtensions(extRes.extensions || []);
     } catch (err) {
       if (err.response?.status === 403 && err.response?.data?.message.includes('profile')) {
         setNeedsProfile(true);
@@ -76,6 +89,42 @@ export default function StudentDashboard() {
     }
   };
 
+  const openExtensionModal = (pass) => {
+    setExtensionPassId(pass.id);
+    setExtensionForm({ requestedHours: 1, remark: '' });
+    setExtDocFile(null);
+    setShowExtension(true);
+  };
+
+  const handleRequestExtension = async (e) => {
+    e.preventDefault();
+    if (!extensionForm.remark.trim()) { toast.error('Please provide a reason for extension'); return; }
+    setExtCreating(true);
+    try {
+      const data = {
+        passId: extensionPassId,
+        requestedHours: extensionForm.requestedHours,
+        remark: extensionForm.remark,
+      };
+      if (extDocFile) data.document = extDocFile;
+      await requestExtension(data);
+      toast.success('Extension request submitted!');
+      setShowExtension(false);
+      fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to submit extension');
+    } finally {
+      setExtCreating(false);
+    }
+  };
+
+  const getExtensionForPass = (passObjId) => {
+    return extensions.find(ext => {
+      const extPassId = ext.passId?._id || ext.passId;
+      return extPassId === passObjId || extPassId?.toString() === passObjId?.toString();
+    });
+  };
+
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
   const formatDateTime = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -87,6 +136,7 @@ export default function StudentDashboard() {
   const activePass = passes.find(p => p.status === 'active' || p.status === 'out');
   const pendingRequest = requests.find(r => r.status === 'pending' || r.status === 'forwarded');
   const recentRequests = requests.slice(0, 3);
+  const pendingExtension = extensions.find(e => e.status === 'pending' || e.status === 'forwarded');
 
   if (needsProfile) {
     return (
@@ -146,15 +196,45 @@ export default function StudentDashboard() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }} />
                     <div>
-                      <p style={{ color: '#22c55e', fontWeight: 600, fontSize: '14px' }}>Active Pass</p>
+                      <p style={{ color: '#22c55e', fontWeight: 600, fontSize: '14px' }}>Active Pass {activePass.status === 'out' ? '(Currently Out)' : ''}</p>
                       <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
                         {activePass.passId} · Valid until {formatDateTime(activePass.validTo)}
                       </p>
                     </div>
                   </div>
-                  <button className="btn btn-sm btn-secondary" onClick={() => setQrModal({ open: true, pass: activePass })}>
-                    <QrCode size={14} /> Show QR
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {activePass.status === 'out' && !pendingExtension && (
+                      <button className="btn btn-sm btn-warning" onClick={() => openExtensionModal(activePass)}>
+                        <TimerReset size={14} /> Extend Time
+                      </button>
+                    )}
+                    <button className="btn btn-sm btn-secondary" onClick={() => setQrModal({ open: true, pass: activePass })}>
+                      <QrCode size={14} /> Show QR
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Pending Extension Banner */}
+              {pendingExtension && (
+                <div style={{
+                  background: 'rgba(168, 85, 247, 0.08)',
+                  border: '1px solid rgba(168, 85, 247, 0.25)',
+                  borderRadius: '12px',
+                  padding: '16px 20px',
+                  marginBottom: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  flexWrap: 'wrap'
+                }}>
+                  <TimerReset size={18} color="#a855f7" />
+                  <div>
+                    <p style={{ color: '#a855f7', fontWeight: 600, fontSize: '14px' }}>Extension Request {pendingExtension.status === 'forwarded' ? '(Forwarded to Warden)' : '(Pending)'}</p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                      Requested +{pendingExtension.requestedHours}hr · "{pendingExtension.remark}"
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -229,7 +309,7 @@ export default function StudentDashboard() {
                     { icon: Plus, title: 'Submit a Request', desc: 'Click "Request Pass" and fill in reason, destination and dates.' },
                     { icon: Clock, title: 'Wait for Approval', desc: 'Manager reviews your request. You\'ll see status update here.' },
                     { icon: QrCode, title: 'Show QR at Gate', desc: 'Once approved, show the QR code from My Passes to the gatekeeper.' },
-                    { icon: XCircle, title: 'Cancel if Needed', desc: 'Changed plans? Cancel a pending request and submit a new one.' },
+                    { icon: TimerReset, title: 'Need More Time?', desc: 'While out, click "Extend Time" to request up to 4 extra hours.' },
                   ].map((tip, i) => (
                     <div key={i} style={{ display: 'flex', gap: '12px', marginBottom: '14px' }}>
                       <tip.icon size={18} style={{ flexShrink: 0, color: 'var(--text-accent)', marginTop: '2px' }} />
@@ -309,30 +389,54 @@ export default function StudentDashboard() {
                         <th>Valid From</th>
                         <th>Valid To</th>
                         <th>Status</th>
+                        <th>Extension</th>
                         <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {passes.length === 0 ? (
-                        <tr><td colSpan={5}><div className="empty-state"><QrCode size={40} /><p>No passes yet</p></div></td></tr>
+                        <tr><td colSpan={6}><div className="empty-state"><QrCode size={40} /><p>No passes yet</p></div></td></tr>
                       ) : (
-                        passes.map((p) => (
-                          <tr key={p.id}>
-                            <td style={{ color: 'var(--text-accent)', fontWeight: 600 }}>{p.passId}</td>
-                            <td>{formatDateTime(p.validFrom)}</td>
-                            <td>{formatDateTime(p.validTo)}</td>
-                            <td><span className={`badge badge-${p.status}`}>{p.status}</span></td>
-                            <td>
-                              {(p.status === 'active' || p.status === 'out' || p.status === 'upcoming') ? (
-                                <button className="btn btn-sm btn-secondary" onClick={() => setQrModal({ open: true, pass: p })}>
-                                  <QrCode size={14} /> Show QR
-                                </button>
-                              ) : (
-                                <span style={{ color: 'var(--text-secondary)' }}>{p.status}</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))
+                        passes.map((p) => {
+                          const ext = getExtensionForPass(p.id);
+                          return (
+                            <tr key={p.id}>
+                              <td style={{ color: 'var(--text-accent)', fontWeight: 600 }}>{p.passId}</td>
+                              <td>{formatDateTime(p.validFrom)}</td>
+                              <td>{formatDateTime(p.validTo)}</td>
+                              <td><span className={`badge badge-${p.status}`}>{p.status}</span></td>
+                              <td>
+                                {ext ? (
+                                  <div>
+                                    <span className={`badge badge-${ext.status}`}>
+                                      {ext.status === 'approved' ? `+${ext.requestedHours}hr ✓` : ext.status === 'rejected' ? `+${ext.requestedHours}hr ✗` : `+${ext.requestedHours}hr ⏳`}
+                                    </span>
+                                    {ext.remark && <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>"{ext.remark}"</p>}
+                                  </div>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>—</span>
+                                )}
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                  {(p.status === 'active' || p.status === 'out' || p.status === 'upcoming') && (
+                                    <button className="btn btn-sm btn-secondary" onClick={() => setQrModal({ open: true, pass: p })}>
+                                      <QrCode size={14} /> QR
+                                    </button>
+                                  )}
+                                  {p.status === 'out' && !ext?.status?.match(/pending|forwarded/) && (
+                                    <button className="btn btn-sm btn-warning" onClick={() => openExtensionModal(p)}>
+                                      <TimerReset size={14} /> Extend
+                                    </button>
+                                  )}
+                                  {!(p.status === 'active' || p.status === 'out' || p.status === 'upcoming') && !ext && (
+                                    <span style={{ color: 'var(--text-secondary)' }}>{p.status}</span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -370,6 +474,39 @@ export default function StudentDashboard() {
                 <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={creating}>
                   {creating ? <Loader2 className="spinner" size={16} /> : 'Submit Request'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+
+          {/* Extension Request Modal */}
+          <Modal isOpen={showExtension} onClose={() => setShowExtension(false)} title="Request Time Extension">
+            <form onSubmit={handleRequestExtension}>
+              <div style={{ background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.2)', borderRadius: '8px', padding: '12px', marginBottom: '16px' }}>
+                <p style={{ color: '#a855f7', fontSize: '13px', fontWeight: 600 }}>⏰ You can extend your pass by up to 4 hours</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '4px' }}>Your request will be sent to the hostel manager for approval.</p>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Extension Duration (hours)</label>
+                <select className="form-select" value={extensionForm.requestedHours} onChange={(e) => setExtensionForm({ ...extensionForm, requestedHours: parseInt(e.target.value) })}>
+                  <option value={1}>1 Hour</option>
+                  <option value={2}>2 Hours</option>
+                  <option value={3}>3 Hours</option>
+                  <option value={4}>4 Hours</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Reason for Extension *</label>
+                <textarea className="form-textarea" placeholder="Why do you need more time?" value={extensionForm.remark} onChange={(e) => setExtensionForm({ ...extensionForm, remark: e.target.value })} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Supporting Document (optional)</label>
+                <input className="form-input" type="file" onChange={(e) => setExtDocFile(e.target.files[0])} accept=".pdf,.jpg,.jpeg,.png" />
+              </div>
+              <div className="modal-footer" style={{ padding: 0, marginTop: '16px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowExtension(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={extCreating} style={{ background: '#a855f7' }}>
+                  {extCreating ? <Loader2 className="spinner" size={16} /> : 'Request Extension'}
                 </button>
               </div>
             </form>

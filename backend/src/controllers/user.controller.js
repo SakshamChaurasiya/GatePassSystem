@@ -7,6 +7,8 @@ const StudentProfile = require("../models/studentProfile.model");
 const WardenProfile = require("../models/wardenProfile.model");
 const ManagerProfile = require("../models/managerProfile.model");
 const GatekeeperProfile = require("../models/gatekeeperProfile.model");
+const EmailJob = require("../models/emailJob.model");
+const Notification = require("../models/notification.model");
 const mongoose = require("mongoose");
 
 const generateTempPassword = () => {
@@ -109,29 +111,53 @@ const createUser = async (req, res) => {
         // =========================
         // 🔥 CREATE USER
         // =========================
+        // If hostelId is not provided (e.g. manager creating a student), default to the creator's hostel
+        const finalHostel = hostelId || (["warden", "manager"].includes(req.user.role) ? req.user.hostel : null);
+
         const newUser = await User.create({
             name,
             email: normalizedEmail,
             password: tempPassword,
             role,
-            hostel: hostelId || null,
+            hostel: finalHostel,
             createdBy: req.user.id,
             mustChangePassword: true
+        });
+
+        // =========================
+        // 📧 QUEUE EMAIL & NOTIFICATION
+        // =========================
+        const emailBody = `
+            <h2>Welcome to Gate Pass System, ${name}!</h2>
+            <p>Your account has been created successfully. Please log in using the temporary password below:</p>
+            <p><strong>Temporary Password:</strong> ${tempPassword}</p>
+            <p>You will be required to change this password upon your first login.</p>
+        `;
+
+        const { v4: uuidv4 } = require("uuid");
+        const batchId = uuidv4();
+
+        await EmailJob.create({
+            recipientEmail: normalizedEmail,
+            subject: "Your Gate Pass System Account",
+            body: emailBody,
+            batchId,
+            creatorId: req.user.id,
+            studentName: name
         });
 
         // =========================
         // ✅ RESPONSE
         // =========================
         return res.status(201).json({
-            message: `${role} created successfully`,
+            message: `Sending password to user...`,
             user: {
                 id: newUser._id,
                 name: newUser.name,
                 email: newUser.email,
                 role: newUser.role,
                 hostel: newUser.hostel
-            },
-            tempPassword // ⚠️ remove in production
+            }
         });
 
     } catch (error) {
@@ -597,7 +623,7 @@ const bulkUploadStudents = async (req, res) => {
             students = xlsx.utils.sheet_to_json(sheet);
         }
 
-        // ================= INSERT =================
+        // ================= INSERT USERS =================
         const formatted = students.map(s => ({
             name: s.name,
             email: s.email,
@@ -605,14 +631,41 @@ const bulkUploadStudents = async (req, res) => {
             role: "student",
             hostel: req.user.hostel || null,
             createdBy: req.user.id,
-            mustChangePassword: true
+            mustChangePassword: true,
+            _tempPlainPassword: s.password // Temporary field to construct the email
         }));
 
-        await User.insertMany(formatted);
+        const insertedUsers = await User.insertMany(formatted);
+
+        // ================= QUEUE EMAILS & NOTIFICATIONS =================
+        const emailJobs = [];
+        const { v4: uuidv4 } = require("uuid");
+        const batchId = uuidv4();
+
+        // Match inserted users with their generated temp passwords
+        insertedUsers.forEach((user, index) => {
+            const originalData = formatted[index];
+            
+            emailJobs.push({
+                recipientEmail: user.email,
+                subject: "Your Gate Pass System Account",
+                body: `
+                    <h2>Welcome to Gate Pass System, ${user.name}!</h2>
+                    <p>Your student account has been created by your hostel manager. Please log in using the temporary password below:</p>
+                    <p><strong>Temporary Password:</strong> ${originalData.password}</p>
+                    <p>You will be required to change this password and complete your profile upon your first login.</p>
+                `,
+                batchId,
+                creatorId: req.user.id
+            });
+        });
+
+        // Bulk insert to avoid blocking the thread or rate limits
+        await EmailJob.insertMany(emailJobs);
 
         res.json({
-            message: "Students uploaded successfully",
-            count: formatted.length
+            message: `Sending passwords to users...`,
+            count: insertedUsers.length
         });
 
     } catch (err) {

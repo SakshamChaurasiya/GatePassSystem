@@ -85,3 +85,35 @@ export const markNotificationRead = async (id) => {
   const response = await api.patch(`/notifications/${id}/read`);
   return response.data;
 };
+
+// Extension requests
+export const requestExtension = async (data) => {
+  const formData = new FormData();
+  Object.keys(data).forEach((key) => {
+    if (data[key] !== null && data[key] !== undefined) {
+      formData.append(key, data[key]);
+    }
+  });
+
+  const response = await api.post('/passes/extension-request', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+export const getMyExtensionRequests = async () => {
+  const response = await api.get('/passes/my-extensions');
+  return response.data;
+};
+
+export const getAllExtensionRequests = async () => {
+  const response = await api.get('/passes/all-extensions');
+  return response.data;
+};
+
+export const handleExtensionAction = async (id, action, remark = '') => {
+  const response = await api.patch(`/passes/extension/${id}/action`, { action, remark });
+  return response.data;
+};

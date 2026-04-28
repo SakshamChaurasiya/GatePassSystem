@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Users, UserPlus, FileText, Check, X as XIcon, Loader2, AlertCircle, ChevronRight, KeyRound, History, Eye } from 'lucide-react';
+import { Users, UserPlus, FileText, Check, X as XIcon, Loader2, AlertCircle, ChevronRight, KeyRound, History, Eye, TimerReset, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Layout from '../components/Layout';
 import StatCard from '../components/StatCard';
@@ -9,7 +9,7 @@ import NotificationBell from '../components/NotificationBell';
 import StudentHistoryModal from '../components/StudentHistoryModal';
 import LivePassesPanel from '../components/LivePassesPanel';
 import { createUser, getUsers } from '../services/userService';
-import { getAllPassRequests, handlePassAction, getManagerHistory } from '../services/passService';
+import { getAllPassRequests, handlePassAction, getManagerHistory, getAllExtensionRequests, handleExtensionAction } from '../services/passService';
 import api from '../services/api';
 
 export default function WardenDashboard() {
@@ -28,15 +28,20 @@ export default function WardenDashboard() {
   const [acting, setActing] = useState(false);
   const [historyModal, setHistoryModal] = useState({ open: false, studentId: null, studentName: '' });
   const [managerHistoryModal, setManagerHistoryModal] = useState({ open: false, data: null, loading: false });
+  const [extensionRequests, setExtensionRequests] = useState([]);
+  const [extActionModal, setExtActionModal] = useState({ open: false, extension: null, action: '' });
+  const [extRemark, setExtRemark] = useState('');
+  const [extActing, setExtActing] = useState(false);
 
   const fetchAll = async () => {
     try {
-      const [statsRes, passRes, usersRes] = await Promise.all([
-        api.get('/user/dashboard'), getAllPassRequests(), getUsers(),
+      const [statsRes, passRes, usersRes, extRes] = await Promise.all([
+        api.get('/user/dashboard'), getAllPassRequests(), getUsers(), getAllExtensionRequests().catch(() => ({ extensions: [] })),
       ]);
       setStats(statsRes.data?.stats || {});
       setPassRequests(passRes.requests || []);
       setAllUsers(usersRes.data || {});
+      setExtensionRequests(extRes.extensions || []);
     } catch (err) { toast.error('Failed to load data'); }
     finally { setLoading(false); }
   };
@@ -56,8 +61,11 @@ export default function WardenDashboard() {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.email) { toast.error('All fields required'); return; }
-    setCreating(true);
-    try { await createUser({ ...formData, role: createRole }); toast.success(`${createRole} created!`); setShowCreate(false); setFormData({ name: '', email: '' }); fetchAll(); }
+    try { 
+      const res = await createUser({ ...formData, role: createRole }); 
+      toast.success(res.message || `${createRole} created!`); 
+      setShowCreate(false); setFormData({ name: '', email: '' }); fetchAll(); 
+    }
     catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setCreating(false); }
   };
@@ -71,6 +79,17 @@ export default function WardenDashboard() {
       setActionModal({ open: false, request: null, action: '' }); setRemark(''); fetchAll();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setActing(false); }
+  };
+
+  const handleExtAction = async () => {
+    if (!extActionModal.extension) return;
+    setExtActing(true);
+    try {
+      await handleExtensionAction(extActionModal.extension.id, extActionModal.action, extRemark);
+      toast.success(`Extension ${extActionModal.action}ed`);
+      setExtActionModal({ open: false, extension: null, action: '' }); setExtRemark(''); fetchAll();
+    } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
+    finally { setExtActing(false); }
   };
 
   const viewManagerHistory = async (managerId) => {
@@ -93,6 +112,9 @@ export default function WardenDashboard() {
           <div className="tabs">
             <button className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
             <button className={`tab-btn ${activeTab === 'passes' ? 'active' : ''}`} onClick={() => setActiveTab('passes')}>Forwarded</button>
+            <button className={`tab-btn ${activeTab === 'extensions' ? 'active' : ''}`} onClick={() => setActiveTab('extensions')}>
+              Extensions {extensionRequests.length > 0 && <span style={{ background: '#a855f7', color: '#fff', borderRadius: '10px', padding: '1px 7px', fontSize: '11px', marginLeft: '6px' }}>{extensionRequests.length}</span>}
+            </button>
             <button className={`tab-btn ${activeTab === 'managerHistory' ? 'active' : ''}`} onClick={() => setActiveTab('managerHistory')}>Manager History</button>
             <button className={`tab-btn ${activeTab === 'studentHistory' ? 'active' : ''}`} onClick={() => setActiveTab('studentHistory')}>Student History</button>
             <button className={`tab-btn ${activeTab === 'live' ? 'active' : ''}`} onClick={() => setActiveTab('live')}>Live Status</button>
@@ -118,6 +140,12 @@ export default function WardenDashboard() {
                 <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: '12px', padding: '14px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><AlertCircle size={18} color="#3b82f6" /><p style={{ color: '#3b82f6', fontWeight: 600, fontSize: '14px' }}>{passRequests.length} forwarded request{passRequests.length > 1 ? 's' : ''}</p></div>
                   <button className="btn btn-sm btn-secondary" onClick={() => setActiveTab('passes')}>Review <ChevronRight size={14} /></button>
+                </div>
+              )}
+              {extensionRequests.length > 0 && (
+                <div style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '12px', padding: '14px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><TimerReset size={18} color="#a855f7" /><p style={{ color: '#a855f7', fontWeight: 600, fontSize: '14px' }}>{extensionRequests.length} forwarded extension{extensionRequests.length > 1 ? 's' : ''}</p></div>
+                  <button className="btn btn-sm btn-secondary" onClick={() => setActiveTab('extensions')}>Review <ChevronRight size={14} /></button>
                 </div>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
@@ -238,6 +266,37 @@ export default function WardenDashboard() {
             </>
           )}
 
+          {/* EXTENSIONS TAB */}
+          {activeTab === 'extensions' && (
+            <>
+              <h2 className="section-title">Forwarded Extension Requests</h2>
+              <div className="card"><div className="data-table-wrapper">
+                <table className="data-table">
+                  <thead><tr><th>Student</th><th>Pass ID</th><th>Current Valid To</th><th>Requested</th><th>New Valid To</th><th>Reason</th><th>Doc</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {extensionRequests.length === 0 ? (
+                      <tr><td colSpan={8}><div className="empty-state"><TimerReset size={40} /><p>No forwarded extensions</p></div></td></tr>
+                    ) : extensionRequests.map((ext) => (
+                      <tr key={ext.id}>
+                        <td style={{ fontWeight: 600 }}>{ext.student?.name || 'Unknown'}<div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 400 }}>{ext.student?.email}</div></td>
+                        <td style={{ color: 'var(--text-accent)', fontWeight: 600 }}>{ext.pass?.passId || '—'}</td>
+                        <td>{formatDate(ext.originalValidTo)}</td>
+                        <td><span style={{ color: '#a855f7', fontWeight: 700 }}>+{ext.requestedHours}hr</span></td>
+                        <td>{formatDate(ext.newValidTo)}</td>
+                        <td style={{ fontSize: '12px', maxWidth: '200px' }}>{ext.remark}</td>
+                        <td>{ext.supportingDoc ? <a href={ext.supportingDoc} target="_blank" rel="noreferrer" className="btn btn-sm btn-secondary"><ExternalLink size={14} /></a> : '—'}</td>
+                        <td><div className="btn-group">
+                          <button className="btn btn-success btn-sm" onClick={() => setExtActionModal({ open: true, extension: ext, action: 'approve' })}>Approve</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => setExtActionModal({ open: true, extension: ext, action: 'reject' })}>Reject</button>
+                        </div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div></div>
+            </>
+          )}
+
           {/* ALL MODALS */}
           <StudentHistoryModal isOpen={historyModal.open} studentId={historyModal.studentId} studentName={historyModal.studentName} onClose={() => setHistoryModal({ open: false, studentId: null, studentName: '' })} />
 
@@ -311,6 +370,20 @@ export default function WardenDashboard() {
               <button className="btn btn-secondary" onClick={() => setActionModal({ open: false, request: null, action: '' })}>Cancel</button>
               <button className={`btn ${actionModal.action === 'approve' ? 'btn-success' : 'btn-danger'}`} onClick={handleAction} disabled={acting}>
                 {acting ? <Loader2 className="spinner" size={16} /> : actionModal.action === 'approve' ? 'Approve' : 'Reject'}
+              </button>
+            </div>
+          </Modal>
+
+          {/* Extension Action Modal */}
+          <Modal isOpen={extActionModal.open} onClose={() => setExtActionModal({ open: false, extension: null, action: '' })} title={`${extActionModal.action === 'approve' ? 'Approve' : 'Reject'} Extension`}>
+            <p style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+              {extActionModal.action === 'approve' ? 'Approve' : 'Reject'} extension from <strong>{extActionModal.extension?.student?.name}</strong> for <strong>+{extActionModal.extension?.requestedHours}hr</strong>?
+            </p>
+            <div className="form-group"><label className="form-label">Remark (optional)</label><textarea className="form-textarea" placeholder="Add a remark..." value={extRemark} onChange={(e) => setExtRemark(e.target.value)} /></div>
+            <div className="modal-footer" style={{ padding: 0 }}>
+              <button className="btn btn-secondary" onClick={() => setExtActionModal({ open: false, extension: null, action: '' })}>Cancel</button>
+              <button className={`btn ${extActionModal.action === 'approve' ? 'btn-success' : 'btn-danger'}`} onClick={handleExtAction} disabled={extActing}>
+                {extActing ? <Loader2 className="spinner" size={16} /> : extActionModal.action === 'approve' ? 'Approve' : 'Reject'}
               </button>
             </div>
           </Modal>

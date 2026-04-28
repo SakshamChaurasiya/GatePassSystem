@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Users, UserPlus, FileText, Check, X as XIcon, Forward, Loader2, Upload, ExternalLink, Clock, CheckCircle, AlertCircle, ChevronRight, History } from 'lucide-react';
+import { Users, UserPlus, FileText, Check, X as XIcon, Forward, Loader2, Upload, ExternalLink, Clock, CheckCircle, AlertCircle, ChevronRight, History, TimerReset } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Layout from '../components/Layout';
 import StatCard from '../components/StatCard';
@@ -10,7 +10,7 @@ import StudentHistoryModal from '../components/StudentHistoryModal';
 import LivePassesPanel from '../components/LivePassesPanel';
 import api from '../services/api';
 import { createUser, getUsers, bulkUploadStudents } from '../services/userService';
-import { getAllPassRequests, handlePassAction } from '../services/passService';
+import { getAllPassRequests, handlePassAction, getAllExtensionRequests, handleExtensionAction } from '../services/passService';
 
 export default function ManagerDashboard() {
   const [stats, setStats] = useState(null);
@@ -29,6 +29,10 @@ export default function ManagerDashboard() {
   const [remark, setRemark] = useState('');
   const [acting, setActing] = useState(false);
   const [historyModal, setHistoryModal] = useState({ open: false, studentId: null, studentName: '' });
+  const [extensionRequests, setExtensionRequests] = useState([]);
+  const [extActionModal, setExtActionModal] = useState({ open: false, extension: null, action: '' });
+  const [extRemark, setExtRemark] = useState('');
+  const [extActing, setExtActing] = useState(false);
 
   const fetchAll = async () => {
     try {
@@ -37,11 +41,14 @@ export default function ManagerDashboard() {
         api.get('/user/dashboard'),
         getAllPassRequests('pending'),
         getUsers(),
+        getAllExtensionRequests(),
       ]);
       if (results[0].status === 'fulfilled') setStats(results[0].value.data?.stats || {});
       if (results[1].status === 'fulfilled') setPassRequests(results[1].value.requests || []);
       else setPassRequests([]);
       if (results[2].status === 'fulfilled') setAllUsers(results[2].value.data || {});
+      if (results[3].status === 'fulfilled') setExtensionRequests(results[3].value.extensions || []);
+      else setExtensionRequests([]);
     } catch (err) {
       toast.error('Data sync failed');
     } finally {
@@ -57,7 +64,7 @@ export default function ManagerDashboard() {
     setCreating(true);
     try {
       const res = await createUser({ ...formData, role: 'student' });
-      toast.success(`Student created! Temp password: ${res.tempPassword}`, { duration: 8000 });
+      toast.success(res.message || 'Student created!', { duration: 8000 });
       setShowCreate(false); setFormData({ name: '', email: '' }); fetchAll();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setCreating(false); }
@@ -67,7 +74,11 @@ export default function ManagerDashboard() {
     e.preventDefault();
     if (!csvFile) { toast.error('Please select a CSV file'); return; }
     setUploading(true);
-    try { await bulkUploadStudents(csvFile); toast.success('Students uploaded!'); setShowBulkUpload(false); setCsvFile(null); fetchAll(); }
+    try { 
+      const res = await bulkUploadStudents(csvFile); 
+      toast.success(res.message || 'Students uploaded!'); 
+      setShowBulkUpload(false); setCsvFile(null); fetchAll(); 
+    }
     catch (err) { toast.error(err.response?.data?.message || 'Bulk upload failed'); }
     finally { setUploading(false); }
   };
@@ -82,6 +93,17 @@ export default function ManagerDashboard() {
       setActionModal({ open: false, request: null, action: '' }); setRemark(''); fetchAll();
     } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
     finally { setActing(false); }
+  };
+
+  const handleExtAction = async () => {
+    if (!extActionModal.extension) return;
+    setExtActing(true);
+    try {
+      await handleExtensionAction(extActionModal.extension.id, extActionModal.action, extRemark);
+      toast.success(extActionModal.action === 'forward' ? 'Extension forwarded to Warden' : `Extension ${extActionModal.action}ed`);
+      setExtActionModal({ open: false, extension: null, action: '' }); setExtRemark(''); fetchAll();
+    } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
+    finally { setExtActing(false); }
   };
 
   const getFilteredUsers = () => {
@@ -114,6 +136,9 @@ export default function ManagerDashboard() {
           <div className="tabs">
             <button className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
             <button className={`tab-btn ${activeTab === 'passes' ? 'active' : ''}`} onClick={() => setActiveTab('passes')}>Pass Requests</button>
+            <button className={`tab-btn ${activeTab === 'extensions' ? 'active' : ''}`} onClick={() => setActiveTab('extensions')}>
+              Extensions {extensionRequests.length > 0 && <span style={{ background: '#a855f7', color: '#fff', borderRadius: '10px', padding: '1px 7px', fontSize: '11px', marginLeft: '6px' }}>{extensionRequests.length}</span>}
+            </button>
             <button className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>Student History</button>
             <button className={`tab-btn ${activeTab === 'live' ? 'active' : ''}`} onClick={() => setActiveTab('live')}>Live Passes</button>
           </div>
@@ -142,6 +167,13 @@ export default function ManagerDashboard() {
                     <p style={{ color: '#ef4444', fontWeight: 600, fontSize: '14px' }}>{passRequests.length} pending request{passRequests.length > 1 ? 's' : ''}</p>
                   </div>
                   <button className="btn btn-sm btn-danger" onClick={() => setActiveTab('passes')}>Review Now <ChevronRight size={14} /></button>
+                </div>
+              )}
+
+              {extensionRequests.length > 0 && (
+                <div style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '12px', padding: '14px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><TimerReset size={18} color="#a855f7" /><p style={{ color: '#a855f7', fontWeight: 600, fontSize: '14px' }}>{extensionRequests.length} extension request{extensionRequests.length > 1 ? 's' : ''} pending</p></div>
+                  <button className="btn btn-sm btn-secondary" onClick={() => setActiveTab('extensions')}>Review <ChevronRight size={14} /></button>
                 </div>
               )}
 
@@ -252,6 +284,41 @@ export default function ManagerDashboard() {
             </>
           )}
 
+          {/* EXTENSIONS TAB */}
+          {activeTab === 'extensions' && (
+            <>
+              <h2 className="section-title">Pending Extension Requests</h2>
+              <div className="card"><div className="data-table-wrapper">
+                <table className="data-table">
+                  <thead><tr><th>Student</th><th>Pass ID</th><th>Current Valid To</th><th>Requested</th><th>New Valid To</th><th>Reason</th><th>Doc</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {extensionRequests.length === 0 ? (
+                      <tr><td colSpan={8}><div className="empty-state"><TimerReset size={40} /><p>No pending extensions</p></div></td></tr>
+                    ) : extensionRequests.map((ext) => (
+                      <tr key={ext.id}>
+                        <td style={{ fontWeight: 600 }}>
+                          {ext.student?.name || 'Unknown'}
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 400 }}>{ext.student?.email}</div>
+                        </td>
+                        <td style={{ color: 'var(--text-accent)', fontWeight: 600 }}>{ext.pass?.passId || '—'}</td>
+                        <td>{formatDate(ext.originalValidTo)}</td>
+                        <td><span style={{ color: '#a855f7', fontWeight: 700 }}>+{ext.requestedHours}hr</span></td>
+                        <td>{formatDate(ext.newValidTo)}</td>
+                        <td style={{ fontSize: '12px', maxWidth: '200px' }}>{ext.remark}</td>
+                        <td>{ext.supportingDoc ? <a href={ext.supportingDoc} target="_blank" rel="noreferrer" className="btn btn-sm btn-secondary"><ExternalLink size={14} /></a> : '—'}</td>
+                        <td><div className="btn-group">
+                          <button className="btn btn-success btn-sm" onClick={() => setExtActionModal({ open: true, extension: ext, action: 'approve' })}><Check size={14} /></button>
+                          <button className="btn btn-warning btn-sm" onClick={() => setExtActionModal({ open: true, extension: ext, action: 'forward' })}><Forward size={14} /></button>
+                          <button className="btn btn-danger btn-sm" onClick={() => setExtActionModal({ open: true, extension: ext, action: 'reject' })}><XIcon size={14} /></button>
+                        </div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div></div>
+            </>
+          )}
+
           {/* MODALS */}
           <StudentHistoryModal isOpen={historyModal.open} studentId={historyModal.studentId} studentName={historyModal.studentName} onClose={() => setHistoryModal({ open: false, studentId: null, studentName: '' })} />
 
@@ -296,6 +363,20 @@ export default function ManagerDashboard() {
               </table>
             </div>
             <div className="mt-lg"><button className="btn btn-secondary w-full" onClick={() => setSelectedRoleView(null)}>Close</button></div>
+          </Modal>
+
+          {/* Extension Action Modal */}
+          <Modal isOpen={extActionModal.open} onClose={() => setExtActionModal({ open: false, extension: null, action: '' })} title={`${extActionModal.action ? extActionModal.action.charAt(0).toUpperCase() + extActionModal.action.slice(1) : ''} Extension`}>
+            <p style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+              {extActionModal.action === 'forward' ? 'Forward' : extActionModal.action === 'approve' ? 'Approve' : 'Reject'} extension request from <strong>{extActionModal.extension?.student?.name}</strong> for <strong>+{extActionModal.extension?.requestedHours}hr</strong>?
+            </p>
+            <div className="form-group"><label className="form-label">Remark (optional)</label><textarea className="form-textarea" placeholder="Add a remark..." value={extRemark} onChange={(e) => setExtRemark(e.target.value)} /></div>
+            <div className="modal-footer" style={{ padding: 0 }}>
+              <button className="btn btn-secondary" onClick={() => setExtActionModal({ open: false, extension: null, action: '' })}>Cancel</button>
+              <button className={`btn ${extActionModal.action === 'approve' ? 'btn-success' : extActionModal.action === 'forward' ? 'btn-warning' : 'btn-danger'}`} onClick={handleExtAction} disabled={extActing}>
+                {extActing ? <Loader2 className="spinner" size={16} /> : extActionModal.action?.toUpperCase()}
+              </button>
+            </div>
           </Modal>
         </>
       )}

@@ -3,6 +3,7 @@ const User = require("../models/user.model");
 const Pass = require("../models/pass.model");
 const GateLog = require("../models/gateLog.model");
 const Notification = require("../models/notification.model");
+const ExtensionRequest = require("../models/extensionRequest.model");
 const { v4: uuidv4 } = require("uuid");
 
 
@@ -754,6 +755,291 @@ const getAllPassesWithStatus = async (req, res) => {
 };
 
 
+// =========================
+// REQUEST EXTENSION (Student)
+// =========================
+const requestExtension = async (req, res) => {
+    try {
+        const studentId = req.user.id;
+        const { passId, requestedHours, remark } = req.body;
+
+        if (!passId || !requestedHours || !remark) {
+            return res.status(400).json({ message: "passId, requestedHours, and remark are required" });
+        }
+
+        const hours = parseInt(requestedHours);
+        if (isNaN(hours) || hours < 1 || hours > 4) {
+            return res.status(400).json({ message: "Extension must be between 1 and 4 hours" });
+        }
+
+        // Find the pass — must be owned by this student and currently "out"
+        const pass = await Pass.findOne({ _id: passId, studentId });
+        if (!pass) {
+            return res.status(404).json({ message: "Pass not found" });
+        }
+        if (pass.status !== "out") {
+            return res.status(400).json({ message: "You can only request extension for a pass that is currently in use (status: out)" });
+        }
+
+        // Check for existing pending/forwarded extension on this pass
+        const existingExtension = await ExtensionRequest.findOne({
+            passId: pass._id,
+            status: { $in: ["pending", "forwarded"] }
+        });
+        if (existingExtension) {
+            return res.status(400).json({ message: "You already have a pending extension request for this pass. Please wait for it to be processed." });
+        }
+
+        const originalValidTo = new Date(pass.validTo);
+        const newValidTo = new Date(originalValidTo.getTime() + hours * 60 * 60 * 1000);
+
+        const file = req.file;
+        const extensionRequest = await ExtensionRequest.create({
+            passId: pass._id,
+            studentId,
+            hostel: req.user.hostel,
+            requestedHours: hours,
+            originalValidTo,
+            newValidTo,
+            remark,
+            supportingDoc: file ? file.path : null,
+            docPublicId: file ? file.filename : null
+        });
+
+        // Notify managers & wardens in the hostel
+        const student = await User.findById(studentId);
+        const staffMembers = await User.find({
+            hostel: pass.hostel,
+            role: { $in: ["manager", "warden"] }
+        });
+
+        for (const staff of staffMembers) {
+            await Notification.create({
+                recipient: staff._id,
+                type: "EXTENSION_REQUEST",
+                message: `🕐 ${student?.name || "Student"} has requested a ${hours}hr extension for pass ${pass.passId}`,
+                relatedPass: pass._id
+            });
+        }
+
+        return res.status(201).json({ message: "Extension request submitted successfully", extensionRequest });
+    } catch (error) {
+        console.error("Request Extension Error:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+// =========================
+// GET MY EXTENSION REQUESTS (Student)
+// =========================
+const getMyExtensionRequests = async (req, res) => {
+    try {
+        const studentId = req.user.id;
+
+        const extensions = await ExtensionRequest.find({ studentId })
+            .sort({ createdAt: -1 })
+            .populate("passId", "passId validFrom validTo status")
+            .populate("processedBy", "name role");
+
+        return res.status(200).json({ count: extensions.length, extensions });
+    } catch (error) {
+        console.error("Get My Extensions Error:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+// =========================
+// GET ALL EXTENSION REQUESTS (Manager/Warden)
+// =========================
+const getAllExtensionRequests = async (req, res) => {
+    try {
+        const role = req.user.role;
+        const userHostel = req.user.hostel;
+
+        if (!["manager", "warden"].includes(role)) {
+            return res.status(403).json({ message: "Access denied" });
+        }
+
+        let filter = { hostel: userHostel };
+        if (role === "manager") filter.status = "pending";
+        if (role === "warden") filter.status = "forwarded";
+
+        const extensions = await ExtensionRequest.find(filter)
+            .populate("studentId", "name email")
+            .populate("passId", "passId validFrom validTo status")
+            .populate("processedBy", "name role")
+            .sort({ createdAt: -1 });
+
+        const formatted = extensions.map(ext => ({
+            id: ext._id,
+            student: {
+                id: ext.studentId?._id,
+                name: ext.studentId?.name,
+                email: ext.studentId?.email
+            },
+            pass: {
+                id: ext.passId?._id,
+                passId: ext.passId?.passId,
+                validFrom: ext.passId?.validFrom,
+                validTo: ext.passId?.validTo,
+                status: ext.passId?.status
+            },
+            requestedHours: ext.requestedHours,
+            originalValidTo: ext.originalValidTo,
+            newValidTo: ext.newValidTo,
+            remark: ext.remark,
+            supportingDoc: ext.supportingDoc || null,
+            status: ext.status,
+            managerAction: ext.managerAction,
+            wardenAction: ext.wardenAction,
+            processedBy: ext.processedBy ? { name: ext.processedBy.name, role: ext.processedBy.role } : null,
+            createdAt: ext.createdAt
+        }));
+
+        return res.status(200).json({ count: formatted.length, extensions: formatted });
+    } catch (error) {
+        console.error("Get All Extensions Error:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+// =========================
+// HANDLE EXTENSION ACTION (Manager/Warden)
+// =========================
+const handleExtensionAction = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const role = req.user.role;
+        const userHostel = req.user.hostel;
+        const { id } = req.params;
+        const { action, remark } = req.body;
+
+        const validActions = ["approve", "reject", "forward"];
+        if (!validActions.includes(action)) {
+            return res.status(400).json({ message: "Invalid action. Must be approve, reject, or forward." });
+        }
+
+        const extension = await ExtensionRequest.findById(id);
+        if (!extension) {
+            return res.status(404).json({ message: "Extension request not found" });
+        }
+
+        if (extension.hostel.toString() !== userHostel) {
+            return res.status(403).json({ message: "You can only act on extensions within your hostel" });
+        }
+
+        if (["approved", "rejected"].includes(extension.status)) {
+            return res.status(400).json({ message: "Extension already finalized" });
+        }
+
+        const student = await User.findById(extension.studentId);
+        const pass = await Pass.findById(extension.passId);
+
+        if (!pass) {
+            return res.status(404).json({ message: "Related pass not found" });
+        }
+
+        // MANAGER
+        if (role === "manager") {
+            if (extension.managerAction.status !== "pending") {
+                return res.status(400).json({ message: "Already processed by manager" });
+            }
+
+            if (action === "forward") {
+                extension.status = "forwarded";
+                extension.managerAction = { status: "forwarded", remark, actedAt: new Date() };
+
+                // Notify wardens
+                const wardens = await User.find({ hostel: pass.hostel, role: "warden" });
+                for (const w of wardens) {
+                    await Notification.create({
+                        recipient: w._id,
+                        type: "EXTENSION_REQUEST",
+                        message: `🔀 Extension request forwarded: ${student?.name || "Student"} wants ${extension.requestedHours}hr extension on pass ${pass.passId}`,
+                        relatedPass: pass._id
+                    });
+                }
+            } else if (action === "approve") {
+                extension.status = "approved";
+                extension.managerAction = { status: "approved", remark, actedAt: new Date() };
+                extension.processedBy = userId;
+
+                // Update the pass validTo
+                pass.validTo = extension.newValidTo;
+                await pass.save();
+
+                // Notify student
+                await Notification.create({
+                    recipient: extension.studentId,
+                    type: "EXTENSION_RESULT",
+                    message: `✅ Your extension request for pass ${pass.passId} has been approved! New return time: ${extension.newValidTo.toLocaleString()}`,
+                    relatedPass: pass._id
+                });
+            } else if (action === "reject") {
+                extension.status = "rejected";
+                extension.managerAction = { status: "rejected", remark, actedAt: new Date() };
+                extension.processedBy = userId;
+
+                // Notify student
+                await Notification.create({
+                    recipient: extension.studentId,
+                    type: "EXTENSION_RESULT",
+                    message: `❌ Your extension request for pass ${pass.passId} has been rejected.${remark ? " Reason: " + remark : ""}`,
+                    relatedPass: pass._id
+                });
+            }
+        }
+        // WARDEN
+        else if (role === "warden") {
+            if (extension.status !== "forwarded") {
+                return res.status(400).json({ message: "Only forwarded extensions can be acted on by warden" });
+            }
+            if (extension.wardenAction.status !== "pending") {
+                return res.status(400).json({ message: "Already processed by warden" });
+            }
+
+            if (action === "approve") {
+                extension.status = "approved";
+                extension.wardenAction = { status: "approved", remark, actedAt: new Date() };
+                extension.processedBy = userId;
+
+                // Update the pass validTo
+                pass.validTo = extension.newValidTo;
+                await pass.save();
+
+                // Notify student
+                await Notification.create({
+                    recipient: extension.studentId,
+                    type: "EXTENSION_RESULT",
+                    message: `✅ Your extension request for pass ${pass.passId} has been approved by warden! New return time: ${extension.newValidTo.toLocaleString()}`,
+                    relatedPass: pass._id
+                });
+            } else if (action === "reject") {
+                extension.status = "rejected";
+                extension.wardenAction = { status: "rejected", remark, actedAt: new Date() };
+                extension.processedBy = userId;
+
+                // Notify student
+                await Notification.create({
+                    recipient: extension.studentId,
+                    type: "EXTENSION_RESULT",
+                    message: `❌ Your extension request for pass ${pass.passId} has been rejected by warden.${remark ? " Reason: " + remark : ""}`,
+                    relatedPass: pass._id
+                });
+            } else {
+                return res.status(400).json({ message: "Warden cannot forward extensions" });
+            }
+        }
+
+        await extension.save();
+        return res.status(200).json({ message: `Extension ${action}ed successfully`, extension });
+    } catch (error) {
+        console.error("Extension Action Error:", error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+
 module.exports = {
     createPassRequest,
     getMyPassRequests,
@@ -767,5 +1053,9 @@ module.exports = {
     getStudentHistory,
     cancelPassRequest,
     getManagerHistory,
-    getAllPassesWithStatus
+    getAllPassesWithStatus,
+    requestExtension,
+    getMyExtensionRequests,
+    getAllExtensionRequests,
+    handleExtensionAction
 };
