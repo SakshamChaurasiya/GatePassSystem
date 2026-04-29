@@ -11,6 +11,7 @@ import LivePassesPanel from '../components/LivePassesPanel';
 import api from '../services/api';
 import { createUser, getUsers, bulkUploadStudents } from '../services/userService';
 import { getAllPassRequests, handlePassAction, getAllExtensionRequests, handleExtensionAction } from '../services/passService';
+import { formatISTDate } from '../utils/dateUtils';
 
 export default function ManagerDashboard() {
   const [stats, setStats] = useState(null);
@@ -124,7 +125,7 @@ export default function ManagerDashboard() {
     return allUsers.students || [];
   };
 
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const formatDate = formatISTDate;
   const recentRequests = passRequests.slice(0, 3);
 
   return (

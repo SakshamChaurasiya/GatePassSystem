@@ -3,6 +3,7 @@ import { Loader2, LogOut, LogIn, QrCode, AlertTriangle, Filter } from 'lucide-re
 import toast from 'react-hot-toast';
 import StatCard from './StatCard';
 import { getAllPassesWithStatus } from '../services/passService';
+import { formatISTDateTime } from '../utils/dateUtils';
 
 export default function LivePassesPanel({ onViewStudentHistory }) {
   const [passes, setPasses] = useState([]);
@@ -30,7 +31,7 @@ export default function LivePassesPanel({ onViewStudentHistory }) {
     return () => clearInterval(interval);
   }, [statusFilter]);
 
-  const fmtTime = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  const fmtTime = formatISTDateTime;
 
   const badge = (status, late) => {
     const colors = { active: '#22c55e', out: '#f59e0b', returned: '#3b82f6', expired: '#6b7280' };

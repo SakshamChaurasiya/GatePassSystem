@@ -3,6 +3,7 @@ import { Loader2, FileText, QrCode, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Modal from './Modal';
 import { getStudentHistory } from '../services/passService';
+import { formatISTDate, formatISTDateTime } from '../utils/dateUtils';
 
 export default function StudentHistoryModal({ studentId, studentName, isOpen, onClose }) {
   const [data, setData] = useState(null);
@@ -19,8 +20,8 @@ export default function StudentHistoryModal({ studentId, studentName, isOpen, on
     }
   }, [isOpen, studentId]);
 
-  const fmt = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-  const fmtTime = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  const fmt = formatISTDate;
+  const fmtTime = formatISTDateTime;
 
   const badge = (status) => {
     const colors = { pending: '#f59e0b', approved: '#22c55e', rejected: '#ef4444', forwarded: '#3b82f6', cancelled: '#6b7280', active: '#22c55e', out: '#f59e0b', returned: '#3b82f6', expired: '#6b7280' };

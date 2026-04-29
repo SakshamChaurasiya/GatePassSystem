@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import Layout from '../components/Layout';
 import StatCard from '../components/StatCard';
 import { getGatekeeperPasses, markOut, markIn, scanQR } from '../services/passService';
+import { formatISTDateTime } from '../utils/dateUtils';
 
 export default function GatekeeperDashboard() {
   const [passes, setPasses] = useState([]);
@@ -202,7 +203,7 @@ export default function GatekeeperDashboard() {
     }
   };
 
-  const formatDate = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  const formatDate = formatISTDateTime;
 
   const activePasses = passes.filter(p => p.status === 'active');
   const outPasses = passes.filter(p => p.status === 'out');

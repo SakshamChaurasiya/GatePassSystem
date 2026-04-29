@@ -8,6 +8,7 @@ import Layout from '../components/Layout';
 import StatCard from '../components/StatCard';
 import Modal from '../components/Modal';
 import { requestPass, getMyRequests, getMyPassesWithStatus, cancelPassRequest, requestExtension, getMyExtensionRequests } from '../services/passService';
+import { formatISTDate, formatISTDateTime, parseISTDateTimeInput } from '../utils/dateUtils';
 
 export default function StudentDashboard() {
   const [requests, setRequests] = useState([]);
@@ -65,7 +66,13 @@ export default function StudentDashboard() {
     if (!reason || !destination || !fromDate || !toDate) { toast.error('All fields are required'); return; }
     setCreating(true);
     try {
-      await requestPass({ reason, destination, fromDate, toDate, document: docFile });
+      await requestPass({ 
+        reason, 
+        destination, 
+        fromDate: parseISTDateTimeInput(fromDate), 
+        toDate: parseISTDateTimeInput(toDate), 
+        document: docFile 
+      });
       toast.success('Pass request submitted successfully!');
       setShowCreate(false);
       setRequestForm({ reason: '', destination: '', fromDate: '', toDate: '' });
@@ -125,8 +132,8 @@ export default function StudentDashboard() {
     });
   };
 
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-  const formatDateTime = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  const formatDate = formatISTDate;
+  const formatDateTime = formatISTDateTime;
 
   const pendingCount = requests.filter(r => r.status === 'pending' || r.status === 'forwarded').length;
   const approvedCount = requests.filter(r => r.status === 'approved').length;

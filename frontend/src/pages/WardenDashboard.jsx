@@ -11,6 +11,7 @@ import LivePassesPanel from '../components/LivePassesPanel';
 import { createUser, getUsers } from '../services/userService';
 import { getAllPassRequests, handlePassAction, getManagerHistory, getAllExtensionRequests, handleExtensionAction } from '../services/passService';
 import api from '../services/api';
+import { formatISTDate } from '../utils/dateUtils';
 
 export default function WardenDashboard() {
   const [stats, setStats] = useState(null);
@@ -100,7 +101,7 @@ export default function WardenDashboard() {
     } catch (err) { toast.error('Failed to load manager history'); setManagerHistoryModal({ open: false, data: null, loading: false }); }
   };
 
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const formatDate = formatISTDate;
   const recentRequests = passRequests.slice(0, 3);
 
   return (

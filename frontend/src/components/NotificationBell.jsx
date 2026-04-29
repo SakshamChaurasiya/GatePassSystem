@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bell, Loader2, AlertTriangle, LogOut, LogIn, Info } from 'lucide-react';
 import { getNotifications, markNotificationRead } from '../services/passService';
+import { formatISTDateTime } from '../utils/dateUtils';
 
 export default function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
@@ -39,7 +40,7 @@ export default function NotificationBell() {
     }
   };
 
-  const fmtTime = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const fmtTime = formatISTDateTime;
 
   return (
     <div style={{ position: 'relative' }}>

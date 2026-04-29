@@ -4,6 +4,7 @@ const Pass = require("../models/pass.model");
 const GateLog = require("../models/gateLog.model");
 const Notification = require("../models/notification.model");
 const ExtensionRequest = require("../models/extensionRequest.model");
+const { getStartOfDayIST } = require("../utils/date.utils");
 const { v4: uuidv4 } = require("uuid");
 
 
@@ -303,9 +304,7 @@ const cancelPassRequest = async (req, res) => {
 const getGatekeeperPasses = async (req, res) => {
     try {
         const hostelId = req.user.hostel;
-        const now = new Date();
-        const todayStart = new Date(now);
-        todayStart.setHours(0, 0, 0, 0);
+        const todayStart = getStartOfDayIST();
 
         // Show passes that are: active, out, or returned today
         const passes = await Pass.find({
