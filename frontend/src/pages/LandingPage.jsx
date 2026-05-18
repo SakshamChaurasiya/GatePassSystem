@@ -57,10 +57,25 @@ export default function LandingPage() {
   ];
 
   const developers = [
-    { name: 'Saksham Chaurasiya', role: 'Full Stack Developer', gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)' },
-    { name: 'Siddhi Jain', role: 'Full Stack Developer', gradient: 'linear-gradient(135deg, #ec4899, #f43f5e)' },
-    { name: 'Vidushi Jain', role: 'Full Stack Developer', gradient: 'linear-gradient(135deg, #14b8a6, #22c55e)' },
-  ];
+  { 
+    name: 'Saksham Chaurasiya', 
+    role: 'Full Stack Developer', 
+    gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    links: { website: 'https://sakshamportfolio-kohl.vercel.app/', linkedin: 'https://www.linkedin.com/in/saksham-chaurasiya-14f', email: 'chaurasiyasaksham23@gmail.com' }
+  },
+  { 
+    name: 'Siddhi Jain', 
+    role: 'Full Stack Developer', 
+    gradient: 'linear-gradient(135deg, #ec4899, #f43f5e)',
+    links: { website: '#', linkedin: 'https://www.linkedin.com/in/siddhi-jain-b4950028b', email: 'siddhijain3010@gmail.com' }
+  },
+  { 
+    name: 'Vidushi Jain', 
+    role: 'Full Stack Developer', 
+    gradient: 'linear-gradient(135deg, #14b8a6, #22c55e)',
+    links: { website: '#', linkedin: 'https://www.linkedin.com/in/vidushijain13/', email: 'vidushi2005jain@gmail.com' }
+  },
+];
 
   return (
     <div className="landing-page">
@@ -184,9 +199,18 @@ export default function LandingPage() {
               <h3>{d.name}</h3>
               <p>{d.role}</p>
               <div className="developer-links">
-                <Globe size={16} />
-                <ExternalLink size={16} />
-                <Mail size={16} />
+                {/* Globe for Website */}
+                <a href={d.links.website} target="_blank" rel="noopener noreferrer" aria-label="Website">
+                  <Globe size={16} />
+                </a>
+                {/* ExternalLink for LinkedIn */}
+                <a href={d.links.linkedin} target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+                  <ExternalLink size={16} />
+                </a>
+                {/* Mail for Email */}
+                <a href={`mailto:${d.links.email}`} aria-label="Email">
+                  <Mail size={16} />
+                </a>
               </div>
             </motion.div>
           ))}
